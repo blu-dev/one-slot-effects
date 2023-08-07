@@ -476,6 +476,7 @@ unsafe fn get_raw_eff_data(ctx: &mut skyline::hooks::InlineCtx) {
     let new_size = header.get_required_chunk_align();
 
     if header_size != new_size {
+        println!("making new header");
         let vfxb_size = *(raw_eff_data.add(header_size + 0x1C) as *const u32) as usize;
 
         let new_memory = skyline::libc::memalign(0x1000, new_size + vfxb_size) as *mut u8;
@@ -573,7 +574,10 @@ unsafe fn get_new_effect_name(object_id: u32, current_name: Hash40) -> Option<Ha
 
     let parent_object = &mut *parent_object;
 
-    let kind = parent_object.kind as usize;
+    let mut kind = parent_object.kind as usize;
+    if kind == *FIGHTER_KIND_NANA as usize {
+        kind = *FIGHTER_KIND_POPO as usize;
+    }
 
     if !FIGHTER_EFFECT_NAMES.is_effect_for_fighter(kind, current_name) {
         if kind == *FIGHTER_KIND_KIRBY as usize {
