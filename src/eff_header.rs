@@ -4,6 +4,7 @@ use binrw::{
     BinWrite,
     NullString
 };
+use std::convert::TryFrom;
 
 #[derive(BinRead, BinWrite, Debug)]
 #[brw(magic = b"EFFN")]
