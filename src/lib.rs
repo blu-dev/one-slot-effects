@@ -396,12 +396,12 @@ unsafe fn get_raw_nutexb_data(ctx: &mut skyline::hooks::InlineCtx) {
     let footer = std::slice::from_raw_parts(raw_data.add(size - 0x70), 0x70);
 
     let mut reader = std::io::Cursor::new(footer);
-
+    
     let mut footer: nutexb::NutexbFooter = reader.read_le().unwrap();
     let current_name = footer.string.to_string();
     let new_name = format!("{}_C{:02}", current_name, slot);
     // println!("{} -> {}", current_name, new_name);
-    footer.string = binrw::NullString::from_string(new_name.clone());
+    footer.string = binrw::NullString::from(new_name.clone());
 
     let mut footer_data = std::slice::from_raw_parts_mut(raw_data.add(size - 0x70), 0x70);
 
@@ -465,7 +465,7 @@ unsafe fn get_raw_eff_data(ctx: &mut skyline::hooks::InlineCtx) {
                 .exists()
             {
                 println!("exists!");
-                binrw::NullString::from_string(one_slot_folder_name)
+                binrw::NullString::from(one_slot_folder_name)
             } else {
                 println!("does not exist!");
                 name
