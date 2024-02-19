@@ -201,7 +201,7 @@ const FIGHTER_STRING_COUNT: usize = 0x75;
 /// The array of [`FIGHTER_STRING_COUNT`] fighter names
 static FIGHTER_NAMES: Lazy<Vec<&'static str>> = Lazy::new(|| unsafe {
     let array = std::slice::from_raw_parts(
-        (0x4f7fe20 + skyline::hooks::getRegionAddress(skyline::hooks::Region::Text) as u64)
+        (0x4f81e20 + skyline::hooks::getRegionAddress(skyline::hooks::Region::Text) as u64)
             as *const *const u8,
         FIGHTER_STRING_COUNT,
     );
