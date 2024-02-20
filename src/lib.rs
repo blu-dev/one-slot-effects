@@ -33,6 +33,9 @@ struct OneSlotInfo {
 /// have to be requeried each time
 struct SlotCache(RwLock<HashMap<&'static str, HashMap<usize, OneSlotInfo>>>);
 
+/// Optional file with effect names 
+const labels: &str = "sd:/ultimate/EffectLabels.txt";
+
 impl SlotCache {
     /// Creates a new cache entry by querying the `mods:/` filesystem hosted by ARCropolis
     fn create_cache_entry(
@@ -536,8 +539,8 @@ unsafe fn unset_current_exe_obj(_: &skyline::hooks::InlineCtx) {
 unsafe fn get_new_effect_name(object_id: u32, current_name: Hash40) -> Option<Hash40> {
     if object_id == 0x50000000u32 {
         println!(
-            "Object ID is invalid for effect {:#x}",
-            current_name.as_u64()
+            "Object ID is invalid for effect {}",
+            current_name.global_label().unwrap_or(format!("{:#x}", current_name.0))
         );
         return None;
     }
@@ -815,6 +818,11 @@ unsafe fn fix_object_ptr(ctx: &mut skyline::hooks::InlineCtx) {
 
 #[skyline::main(name = "one-slot-eff")]
 pub fn main() {
+
+    if Path::new(labels).is_file() {
+        Hash40::set_global_labels_file(labels).unwrap();
+    }
+
     std::panic::set_hook(Box::new(|info| {
         let location = info.location().unwrap();
 
