@@ -3,19 +3,29 @@
 #![feature(let_else)]
 mod eff_header;
 mod nx;
+mod eff_hashes;
 
 use binrw::{BinRead, BinReaderExt, BinWriterExt};
 use once_cell::sync::Lazy;
 use parking_lot::lock_api::RwLockUpgradableReadGuard;
 use parking_lot::RwLock;
-use smash::{app::lua_bind::*, lib::lua_const::*};
+use smash::{
+    app::{
+        lua_bind::*,
+        *,
+        Fighter
+    },
+    lib::lua_const::*
+};
 
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
 };
 
-use smash_arc::{Hash40, PathListEntry};
+use smash_arc::{Hash40, HashLabels, PathListEntry};
+
+use eff_hashes::*;
 
 macro_rules! hash40_fmt {
     ($($arg:tt)*) => {{
@@ -40,12 +50,14 @@ impl SlotCache {
         fighter_name: &'static str,
         slot: usize,
     ) {
+        // println!("creating SlotCache entry for slot {}", slot as i32);
         let root_path = Path::new("mods:/effect/fighter").join(fighter_name);
         let has_effect = root_path
             .join(&format!("ef_{}_c{:02}.eff", fighter_name, slot))
             .exists();
         let has_trail = root_path.join(&format!("trail_c{:02}", slot)).exists();
         if let Some(sub_map) = map.get_mut(fighter_name) {
+            // println!("insterting sub-map for slot {} into {}'s existing hash map", slot as i32, fighter_name);
             sub_map.insert(
                 slot,
                 OneSlotInfo {
@@ -54,6 +66,7 @@ impl SlotCache {
                 },
             );
         } else {
+            // println!("inserting sub-map for slot {} into a new hash map for {}", slot as i32, fighter_name);
             let mut sub_map = HashMap::new();
             sub_map.insert(
                 slot,
@@ -93,6 +106,8 @@ impl SlotCache {
         Self::create_cache_entry(&mut lock, fighter, slot);
         let map = lock.get(fighter).unwrap();
         let info = map.get(&slot).unwrap();
+        if info.has_effect { println!("{} slot {} has unique effects", fighter, slot as i32)} 
+        else {println!("{} slot {} uses base effects", fighter, slot as i32)};
         info.has_effect
     }
 
@@ -168,13 +183,15 @@ impl FighterEffectCache {
 
     pub fn set_effect_for_fighter(&self, kind: usize, eff_hash: Hash40) {
         let mut lock = self.0.write();
+        // println!("caching effect {:#x}. current cache size is {}", eff_hash.as_u64(), lock.len() as i32);
 
         'assume_exists: {
             let Some(hashes) = lock.get_mut(&kind) else { break 'assume_exists };
             let _ = hashes.insert(eff_hash);
             return;
         }
-
+        
+        println!("making new effect cache set for fighter kind {}", kind as i32);
         let mut new_set = HashSet::new();
         let _ = new_set.insert(eff_hash);
         let _ = lock.insert(kind, new_set);
@@ -265,7 +282,7 @@ unsafe fn fighter_lookup_effect_folder(ctx: &skyline::hooks::InlineCtx) {
         EFF_FIGHTER_SLOT = Some(costume_slot);
     }
 
-    // if there is a one slot trail then we want ot set the one-slot trail global
+    // if there is a one slot trail then we want to set the one-slot trail global
     if FIGHTER_ONE_SLOT_EFFS.has_one_slot_trail(fighter_name, costume_slot) {
         EFF_FIGHTER_TRAIL_SLOT = Some(costume_slot);
     }
@@ -286,7 +303,7 @@ unsafe fn fighter_lookup_effect_folder(ctx: &skyline::hooks::InlineCtx) {
 /// When searching through the directory provided by the `dir_path_index`, it searches for the first file that
 /// uses an `eff` extension, which is fine in vanilla, but if we want to add more we have to add some discriminating factors:
 /// 1. If it is a fighter, and we don't have a one-slot effect, we need to make sure the file name is `ef_<fighter name>.eff`
-/// 2. If it is a fighter, and we don't have a one-slot effect, we need to make sure the file name is `ef_<fighter name>_c<slot>.eff`
+/// 2. If it is a fighter, and we do have a one-slot effect, we need to make sure the file name is `ef_<fighter name>_c<slot>.eff`
 /// 3. If it is not a fighter, we just perform regular behavior
 ///
 /// Pre Conditions:
@@ -334,6 +351,11 @@ unsafe fn check_extension_eff_inline_hook(ctx: &mut skyline::hooks::InlineCtx) {
 
     // Based on the file name hash accept or reject the `PathListEntry`
     *ctx.registers[8].x.as_mut() = if path_list_entry.file_name.hash40() == hash {
+        // if let Some(slot) =  EFF_FIGHTER_SLOT.as_ref() {
+        //     println!("accepting PathListEntry for slot {}'s eff", *slot as i32);
+        // } else { 
+        //     println!("accepting PathListEntry for base eff file");
+        // };
         0
     } else {
         1
@@ -419,12 +441,15 @@ unsafe fn get_raw_nutexb_data(ctx: &mut skyline::hooks::InlineCtx) {
 
 #[skyline::hook(offset = 0x3560640, inline)]
 unsafe fn get_raw_eff_data(ctx: &mut skyline::hooks::InlineCtx) {
-    let Some(slot) = EFF_FIGHTER_SLOT.as_ref() else { return };
     let Some(name) = EFF_FIGHTER_NAME.as_ref() else { return };
     let Some(kind) = EFF_FIGHTER_KIND.as_ref() else { return };
-    let slot = *slot;
+    let Some(slot) = EFF_FIGHTER_SLOT.as_ref() else { 
+        println!("fighter eff data is not one-slotted. continuing as normal.");
+        return
+    };
     let fighter_name = *name;
     let kind = *kind;
+    let slot = *slot;
 
     let mut raw_eff_data = *(*ctx.registers[8].x.as_ref() as *const *const u8);
     if raw_eff_data.is_null() {
@@ -434,6 +459,7 @@ unsafe fn get_raw_eff_data(ctx: &mut skyline::hooks::InlineCtx) {
     let mut reader = std::io::Cursor::new(std::slice::from_raw_parts(raw_eff_data, header_size));
     let mut header: eff_header::EffFile = reader.read_le().unwrap();
 
+    println!("adding eff data for slot c{:02} to {}'s cache", slot, fighter_name);
     for str in header.entry_names.iter() {
         let name = str.to_string().to_lowercase();
         FIGHTER_EFFECT_NAMES.set_effect_for_fighter(kind, Hash40::from(name.as_str()));
@@ -501,7 +527,10 @@ unsafe fn get_raw_eff_data(ctx: &mut skyline::hooks::InlineCtx) {
 #[skyline::from_offset(0x3ac560)]
 unsafe fn battle_object_from_id(id: u32) -> *mut u32;
 
-#[skyline::hook(offset = 0x60bfd8, inline)]
+// this hook was previously ran on 0x60bfd8. it is moved up 0x4 so that it runs before that same offset used in smashline
+// this in turn allows smashline's transplanted effects to still work without affecting one slot effects
+// otherwise, if they share the offset, OSE cannot properly cache effects beyond the first file loaded for any given fighter
+#[skyline::hook(offset = 0x60bfd4, inline)]
 unsafe fn tmp(ctx: &mut skyline::hooks::InlineCtx) {
     let Some(slot) = EFF_FIGHTER_SLOT.as_ref() else { return };
     let slot = 1 + *slot as u32;
@@ -535,10 +564,17 @@ unsafe fn unset_current_exe_obj(_: &skyline::hooks::InlineCtx) {
 
 unsafe fn get_new_effect_name(object_id: u32, current_name: Hash40) -> Option<Hash40> {
     if object_id == 0x50000000u32 {
-        println!(
-            "Object ID is invalid for effect {:#x}",
-            current_name.as_u64()
-        );
+        // println!(
+        //     "Object ID is invalid for effect {}",
+        //     current_name.global_label().unwrap_or(format!("{:#x}", current_name.0))
+        // );
+        return None;
+    }
+
+    // uses label file to bypass running any additional logic if the effect is a common 'sys_' effect
+    let effect_name = current_name.global_label().unwrap_or(format!("{:#x}", current_name.0));
+    if effect_name.starts_with("sys_") {
+        // println!("bypassing sys effect ({})", effect_name);
         return None;
     }
 
@@ -552,6 +588,9 @@ unsafe fn get_new_effect_name(object_id: u32, current_name: Hash40) -> Option<Ha
                 (*weapon).module_accessor,
                 *WEAPON_INSTANCE_WORK_ID_INT_LINK_OWNER,
             ) as u32;
+            // let owner_boma = sv_battle_object::module_accessor(new_id);
+            // let owner_kind = utility::get_kind(&mut *owner_boma);
+            // println!("weapon call. running function again with owner of kind {}", owner_kind);
             return get_new_effect_name(new_id, current_name);
         }
         0x4 => {
@@ -574,27 +613,50 @@ unsafe fn get_new_effect_name(object_id: u32, current_name: Hash40) -> Option<Ha
 
     let parent_object = &mut *parent_object;
 
+    // println!("checking fighter kind {} for effect {}", parent_object.kind, effect_name);
     let mut kind = parent_object.kind as usize;
     if kind == *FIGHTER_KIND_NANA as usize {
         kind = *FIGHTER_KIND_POPO as usize;
     }
 
     if !FIGHTER_EFFECT_NAMES.is_effect_for_fighter(kind, current_name) {
-        if kind == *FIGHTER_KIND_KIRBY as usize {
-            let chara_kind = WorkModule::get_int(
-                parent_object.module_accessor,
-                *FIGHTER_KIRBY_INSTANCE_WORK_ID_INT_COPY_CHARA,
-            );
-            if chara_kind != -1 {
-                let chara_kind = chara_kind as usize;
-                let slot =
-                    (WorkModule::get_int(parent_object.module_accessor, 0x100000fd) - 1) as usize;
-                if FIGHTER_EFFECT_NAMES.is_effect_for_fighter(chara_kind, current_name) {
-                    return EFF_HASH_LOOKUP.get_one_slotted_effect(current_name, slot);
+        // with common effects and weapons ruled out, we can assume if we are in this block that there is
+        // most likely a fighter trying to call effects from a different fighter
+
+        // run an additional check for pocket, inhale, and copy abilities
+        let pocket_charas: [usize;4] = [
+            *FIGHTER_KIND_MURABITO as usize,
+            *FIGHTER_KIND_SHIZUE as usize,
+            *FIGHTER_KIND_KIRBY as usize,
+            *FIGHTER_KIND_DEDEDE as usize
+        ];
+
+        // make an exception for sora's hit effects, since they actually get called by the opponent rather than sora himself
+        let is_trail_cut_hit = effect_name.contains("trail_hit_cut");
+
+        if (pocket_charas).contains(&kind)
+        || is_trail_cut_hit {
+            // checks each active player to see if any of them own the effect we are trying to call
+            let num_players = Fighter::get_fighter_entry_count(); 
+            for i in 0..num_players{
+                let opponent_boma = sv_battle_object::module_accessor(Fighter::get_id_from_entry_id(i));
+                let opponent_kind = utility::get_kind(&mut *opponent_boma);
+                let opponent_slot = (WorkModule::get_int(opponent_boma, *FIGHTER_INSTANCE_WORK_ID_INT_COLOR) - 1);
+                // println!("checking opponent kind {}", opponent_kind);
+                // check if the current fighter we are checking matches the attempted effect hash
+                if FIGHTER_EFFECT_NAMES.is_effect_for_fighter(opponent_kind as usize, current_name) {
+                    // println!("found a match on {}, borrowing effect from opponent slot {}", i, opponent_slot);
+                    // grab the id of the effect's owner so we can actually call it
+                    let new_id = Fighter::get_id_from_entry_id(i);
+
+                    // re-queries this function with the discovered owner
+                    return get_new_effect_name(new_id as u32, current_name);
                 }
             }
         }
-        // println!("Effect {:#x} not for fighter kind {}", current_name.as_u64(), kind);
+
+        // println!("effect is not assigned to fighter {}'s costume slot", kind);
+
         return None;
     }
 
@@ -603,7 +665,7 @@ unsafe fn get_new_effect_name(object_id: u32, current_name: Hash40) -> Option<Ha
         *FIGHTER_INSTANCE_WORK_ID_INT_COLOR,
     ) as usize;
     let Some(new) = EFF_HASH_LOOKUP.get_one_slotted_effect(current_name, slot) else { return None };
-    // println!("Changed effect {:#x} to {:#x}", current_name.as_u64(), new.as_u64());
+    // println!("Changed effect {} to {}", current_name.global_label().unwrap_or(format!("{:#x}", current_name.0)), new.global_label().unwrap_or(format!("{:#x}", new.0)));
     Some(new)
 }
 
@@ -833,6 +895,9 @@ pub fn main() {
             err_msg.as_str()
         );
     }));
+
+    Hash40::set_global_labels(HashLabels::from_string(HASH_LABELS));
+
     unsafe {
         // nop all of the following instructions because we are replacing them with a hook of our own
         let _ = skyline::patching::patch_data(
