@@ -637,10 +637,10 @@ unsafe fn get_new_effect_name(object_id: u32, current_name: Hash40) -> Option<Ha
         if (pocket_charas).contains(&kind)
         || is_trail_cut_hit {
             // checks each active player to see if any of them own the effect we are trying to call
-            let num_players = Fighter::get_fighter_entry_count(); 
-            for i in 0..num_players{
+            for i in 0..8 {
                 let opponent_boma = sv_battle_object::module_accessor(Fighter::get_id_from_entry_id(i));
                 let opponent_kind = utility::get_kind(&mut *opponent_boma);
+                if opponent_kind == -1 { continue };
                 let opponent_slot = (WorkModule::get_int(opponent_boma, *FIGHTER_INSTANCE_WORK_ID_INT_COLOR) - 1);
                 // println!("checking opponent kind {}", opponent_kind);
                 // check if the current fighter we are checking matches the attempted effect hash
