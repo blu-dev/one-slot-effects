@@ -631,11 +631,11 @@ unsafe fn get_new_effect_name(object_id: u32, current_name: Hash40) -> Option<Ha
             *FIGHTER_KIND_DEDEDE as usize
         ];
 
-        // make an exception for sora's hit effects, since they actually get called by the opponent rather than sora himself
-        let is_trail_cut_hit = effect_name.contains("trail_hit_cut");
+        // make an exception for certain hit effects, since they actually get called by the opponent rather than the fighter themself
+        let is_uniq_hit_effect = effect_name.starts_with("trail_") || effect_name.starts_with("demon_");
 
         if (pocket_charas).contains(&kind)
-        || is_trail_cut_hit {
+        || is_uniq_hit_effect {
             // checks each active player to see if any of them own the effect we are trying to call
             for i in 0..8 {
                 let opponent_boma = sv_battle_object::module_accessor(Fighter::get_id_from_entry_id(i));
