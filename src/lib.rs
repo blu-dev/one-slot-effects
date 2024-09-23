@@ -655,6 +655,38 @@ unsafe fn get_new_effect_name(object_id: u32, current_name: Hash40) -> Option<Ha
             }
         }
 
+        // certain effects that are costume-specific are called with a unique id
+        // we can derive the base effect's hash from this and instead requery with the correct emitter name
+        let arg11_effects: [&str; 9] = [
+            "duckhunt_feather",
+            "duckhunt_feather_long",
+            "fox_tail_attack_01",
+            "samusd_gbeam_flash_01",
+            "sonic_runtrace",
+            "sonic_appealruntrace",
+            "yoshi_entry_01",
+            "yoshi_gorogorotamago_01",
+            "yoshi_tamago_kakera_01"
+        ];
+        let costume = WorkModule::get_int(parent_object.module_accessor, *FIGHTER_INSTANCE_WORK_ID_INT_COLOR) as u64;
+        let mut base_id = format!("{:#x}", current_name.as_u64()).replace(format!("{:#x}", costume).as_str(), "0x");
+        if base_id.starts_with("0x0") { base_id = base_id.replace("0x0", "0x") };
+        for effect in arg11_effects {
+            let hex_string = format!("{:#x}", Hash40::from(effect).as_u64());
+            if hex_string == base_id.as_str() && costume != 0 {
+                let fixed_name = 
+                    if effect.contains("_01") {
+                        [effect.replace("_01", ""), format!("{:02}", costume + 1)].join("_")
+                    }
+                    else {
+                        [effect, format!("{:02}", costume).as_str()].join("_")
+                    };
+                // println!("corrected effect label: {}", fixed_name);
+
+                return get_new_effect_name(object_id, Hash40::from(fixed_name.as_str()));
+            }
+        }
+
         // println!("effect is not assigned to fighter {}'s costume slot", kind);
 
         return None;
