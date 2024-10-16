@@ -1,6 +1,13 @@
 #![feature(proc_macro_hygiene)]
 #![feature(label_break_value)]
 #![feature(let_else)]
+#![allow(unused)]
+#![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
+#![allow(stable_features)]
+#![allow(improper_ctypes_definitions)]
+#![allow(static_mut_refs)]
+
 mod eff_header;
 mod nx;
 mod eff_hashes;
@@ -932,20 +939,18 @@ pub fn main() {
 
     unsafe {
         // nop all of the following instructions because we are replacing them with a hook of our own
-        let _ = skyline::patching::patch_data(
-            0x356030c,
-            &[
-                AARCh264_NOP,
-                AARCh264_NOP,
-                AARCh264_NOP,
-                AARCh264_NOP,
-                AARCh264_NOP,
-                AARCh264_NOP,
-            ],
-        );
-        let _ = skyline::patching::nop_data(0x355fe94);
-        let _ = skyline::patching::patch_data(0x60bf78, &0x52800009u32);
+        skyline::patching::Patch::in_text(0x356030c).data([
+            AARCh264_NOP,
+            AARCh264_NOP,
+            AARCh264_NOP,
+            AARCh264_NOP,
+            AARCh264_NOP,
+            AARCh264_NOP,
+        ]);
+        skyline::patching::Patch::in_text(0x355fe94).nop();
+        skyline::patching::Patch::in_text(0x60bf78).data(0x52800009u32);
     }
+
     skyline::install_hooks!(
         get_raw_eff_data,
         check_extension_eff_inline_hook,
