@@ -639,7 +639,11 @@ unsafe fn get_new_effect_name(object_id: u32, current_name: Hash40) -> Option<Ha
         ];
 
         // make an exception for certain hit effects, since they actually get called by the opponent rather than the fighter themself
-        let is_uniq_hit_effect = effect_name.starts_with("trail_") || effect_name.starts_with("demon_");
+        let is_uniq_hit_effect = 
+            effect_name.starts_with("bayonetta_")
+            || effect_name.starts_with("jack_")
+            || effect_name.starts_with("trail_") 
+            || effect_name.starts_with("demon_");
 
         if (pocket_charas).contains(&kind)
         || is_uniq_hit_effect {
