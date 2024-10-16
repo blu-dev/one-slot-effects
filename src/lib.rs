@@ -1,6 +1,13 @@
 #![feature(proc_macro_hygiene)]
 #![feature(label_break_value)]
 #![feature(let_else)]
+#![allow(unused)]
+#![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
+#![allow(stable_features)]
+#![allow(improper_ctypes_definitions)]
+#![allow(static_mut_refs)]
+
 mod eff_header;
 mod nx;
 mod eff_hashes;
@@ -313,7 +320,7 @@ unsafe fn fighter_lookup_effect_folder(ctx: &skyline::hooks::InlineCtx) {
 /// Post Conditions:
 /// * `x8`: 0 if we want to accept the `PathListEntry`, non-zero if we want to reject it
 /// * `x9`: the `Hash40` for "eff"
-#[skyline::hook(offset = 0x35602ec, inline)]
+#[skyline::hook(offset = 0x356030c, inline)]
 unsafe fn check_extension_eff_inline_hook(ctx: &mut skyline::hooks::InlineCtx) {
     let eff_hash = Hash40::from("eff");
 
@@ -373,7 +380,7 @@ unsafe fn one_slot_cleanup(_: &skyline::hooks::InlineCtx) {
     EFF_FIGHTER_TRAIL_SLOT = None;
 }
 
-#[skyline::hook(offset = 0x355fe74, inline)]
+#[skyline::hook(offset = 0x355fe94, inline)]
 unsafe fn get_trail_folder_hash(ctx: &mut skyline::hooks::InlineCtx) {
     // Pre conditions:
     // x8: The already processed CRC32 hash (inverted)
@@ -403,7 +410,7 @@ unsafe fn get_trail_folder_hash(ctx: &mut skyline::hooks::InlineCtx) {
     }
 }
 
-#[skyline::hook(offset = 0x3560b80, inline)]
+#[skyline::hook(offset = 0x3560ba0, inline)]
 unsafe fn get_raw_nutexb_data(ctx: &mut skyline::hooks::InlineCtx) {
     let Some(slot) = EFF_FIGHTER_TRAIL_SLOT.as_ref() else { return };
     let slot = *slot;
@@ -439,7 +446,7 @@ unsafe fn get_raw_nutexb_data(ctx: &mut skyline::hooks::InlineCtx) {
     writer.write_le(&footer).unwrap();
 }
 
-#[skyline::hook(offset = 0x3560640, inline)]
+#[skyline::hook(offset = 0x3560660, inline)]
 unsafe fn get_raw_eff_data(ctx: &mut skyline::hooks::InlineCtx) {
     let Some(name) = EFF_FIGHTER_NAME.as_ref() else { return };
     let Some(kind) = EFF_FIGHTER_KIND.as_ref() else { return };
@@ -701,7 +708,7 @@ unsafe fn get_new_effect_name(object_id: u32, current_name: Hash40) -> Option<Ha
     Some(new)
 }
 
-#[skyline::hook(offset = 0x355b550, inline)]
+#[skyline::hook(offset = 0x355b570, inline)]
 unsafe fn get_handle_by_hash(ctx: &mut skyline::hooks::InlineCtx) {
     let current_hash = Hash40::from(*ctx.registers[1].x.as_ref());
     *ctx.registers[1].x.as_mut() = get_new_effect_name(CURRENT_EXECUTING_OBJECT, current_hash)
@@ -709,14 +716,14 @@ unsafe fn get_handle_by_hash(ctx: &mut skyline::hooks::InlineCtx) {
         .as_u64();
 }
 
-#[skyline::hook(offset = 0x35630d0, inline)]
+#[skyline::hook(offset = 0x35630f0, inline)]
 unsafe fn make_effect(ctx: &mut skyline::hooks::InlineCtx) {
     let Some(new_effect) = get_new_effect_name(CURRENT_EXECUTING_OBJECT, Hash40::from(*ctx.registers[1].x.as_ref())) else { return };
 
     *ctx.registers[1].x.as_mut() = new_effect.as_u64();
 }
 
-#[skyline::hook(offset = 0x3567330, inline)]
+#[skyline::hook(offset = 0x3567350, inline)]
 unsafe fn make_after_image(ctx: &skyline::hooks::InlineCtx) {
     let ptr = *ctx.registers[0].x.as_ref() as *mut Hash40;
     let first_hash = *ptr.add(4);
@@ -726,7 +733,7 @@ unsafe fn make_after_image(ctx: &skyline::hooks::InlineCtx) {
     *ptr.add(5) = get_new_effect_name(CURRENT_EXECUTING_OBJECT, second_hash).unwrap_or(second_hash);
 }
 
-#[skyline::hook(offset = 0x3563ad0, inline)]
+#[skyline::hook(offset = 0x3563af0, inline)]
 unsafe fn detach_effect(ctx: &mut skyline::hooks::InlineCtx) {
     let current_hash = Hash40::from(*ctx.registers[3].x.as_ref());
     *ctx.registers[3].x.as_mut() = get_new_effect_name(CURRENT_EXECUTING_OBJECT, current_hash)
@@ -734,7 +741,7 @@ unsafe fn detach_effect(ctx: &mut skyline::hooks::InlineCtx) {
         .as_u64();
 }
 
-#[skyline::hook(offset = 0x3563bd0, inline)]
+#[skyline::hook(offset = 0x3563bf0, inline)]
 unsafe fn kill_effect(ctx: &mut skyline::hooks::InlineCtx) {
     let current_hash = Hash40::from(*ctx.registers[5].x.as_ref());
     *ctx.registers[5].x.as_mut() = get_new_effect_name(CURRENT_EXECUTING_OBJECT, current_hash)
@@ -897,7 +904,7 @@ unsafe fn one_slot_movies(ctx: &mut skyline::hooks::InlineCtx) {
     }
 }
 
-#[skyline::hook(offset = 0x2359948, inline)]
+#[skyline::hook(offset = 0x2359968, inline)]
 unsafe fn main_menu_create(_: &skyline::hooks::InlineCtx) {
     Lazy::force(&MOVIE_CACHE);
 }
@@ -932,20 +939,18 @@ pub fn main() {
 
     unsafe {
         // nop all of the following instructions because we are replacing them with a hook of our own
-        let _ = skyline::patching::patch_data(
-            0x35602ec,
-            &[
-                AARCh264_NOP,
-                AARCh264_NOP,
-                AARCh264_NOP,
-                AARCh264_NOP,
-                AARCh264_NOP,
-                AARCh264_NOP,
-            ],
-        );
-        let _ = skyline::patching::nop_data(0x355fe74);
-        let _ = skyline::patching::patch_data(0x60bf78, &0x52800009u32);
+        skyline::patching::Patch::in_text(0x356030c).data([
+            AARCh264_NOP,
+            AARCh264_NOP,
+            AARCh264_NOP,
+            AARCh264_NOP,
+            AARCh264_NOP,
+            AARCh264_NOP,
+        ]);
+        skyline::patching::Patch::in_text(0x355fe94).nop();
+        skyline::patching::Patch::in_text(0x60bf78).data(0x52800009u32);
     }
+
     skyline::install_hooks!(
         get_raw_eff_data,
         check_extension_eff_inline_hook,
