@@ -579,15 +579,15 @@ static mut DITTO_BUFFER: bool = false;
 
 unsafe fn get_new_effect_name(object_id: u32, current_name: Hash40) -> Option<Hash40> {
     let effect_name = current_name.global_label().unwrap_or(format!("{:#x}", current_name.0));
-    
     if object_id == 0x50000000u32 {
         // println!("Object ID is invalid for effect {effect_name}");
         return None;
     }
 
     // uses labels to bypass running any additional logic if the effect is a common 'sys_' effect
-    if effect_name.starts_with("sys_") {
-        // println!("bypassing sys effect ({})", effect_name);
+    if effect_name.starts_with("sys_")
+    || effect_name.starts_with("pickel_rail") { // make an exception for minecart rails. these get called a LOT and will lag the game if we don't bypass them
+        // println!("bypassing effect ({})", effect_name);
         return None;
     }
 
