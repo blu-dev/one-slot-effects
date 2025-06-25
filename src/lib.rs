@@ -225,7 +225,7 @@ const FIGHTER_STRING_COUNT: usize = 0x75;
 /// The array of [`FIGHTER_STRING_COUNT`] fighter names
 static FIGHTER_NAMES: Lazy<Vec<&'static str>> = Lazy::new(|| unsafe {
     let array = std::slice::from_raw_parts(
-        (0x4f81e20 + skyline::hooks::getRegionAddress(skyline::hooks::Region::Text) as u64)
+        (0x4f80e20 + skyline::hooks::getRegionAddress(skyline::hooks::Region::Text) as u64)
             as *const *const u8,
         FIGHTER_STRING_COUNT,
     );
@@ -320,7 +320,7 @@ unsafe fn fighter_lookup_effect_folder(ctx: &skyline::hooks::InlineCtx) {
 /// Post Conditions:
 /// * `x8`: 0 if we want to accept the `PathListEntry`, non-zero if we want to reject it
 /// * `x9`: the `Hash40` for "eff"
-#[skyline::hook(offset = 0x356030c, inline)]
+#[skyline::hook(offset = 0x356009c, inline)]
 unsafe fn check_extension_eff_inline_hook(ctx: &mut skyline::hooks::InlineCtx) {
     let eff_hash = Hash40::from("eff");
 
@@ -380,7 +380,7 @@ unsafe fn one_slot_cleanup(_: &skyline::hooks::InlineCtx) {
     EFF_FIGHTER_TRAIL_SLOT = None;
 }
 
-#[skyline::hook(offset = 0x355fe94, inline)]
+#[skyline::hook(offset = 0x355fc24, inline)]
 unsafe fn get_trail_folder_hash(ctx: &mut skyline::hooks::InlineCtx) {
     // Pre conditions:
     // x8: The already processed CRC32 hash (inverted)
@@ -410,7 +410,7 @@ unsafe fn get_trail_folder_hash(ctx: &mut skyline::hooks::InlineCtx) {
     }
 }
 
-#[skyline::hook(offset = 0x3560ba0, inline)]
+#[skyline::hook(offset = 0x3560930, inline)]
 unsafe fn get_raw_nutexb_data(ctx: &mut skyline::hooks::InlineCtx) {
     let Some(slot) = EFF_FIGHTER_TRAIL_SLOT.as_ref() else { return };
     let slot = *slot;
@@ -446,7 +446,7 @@ unsafe fn get_raw_nutexb_data(ctx: &mut skyline::hooks::InlineCtx) {
     writer.write_le(&footer).unwrap();
 }
 
-#[skyline::hook(offset = 0x3560660, inline)]
+#[skyline::hook(offset = 0x35603f0, inline)]
 unsafe fn get_raw_eff_data(ctx: &mut skyline::hooks::InlineCtx) {
     let Some(name) = EFF_FIGHTER_NAME.as_ref() else { return };
     let Some(kind) = EFF_FIGHTER_KIND.as_ref() else { return };
@@ -708,7 +708,7 @@ unsafe fn get_new_effect_name(object_id: u32, current_name: Hash40) -> Option<Ha
     Some(new)
 }
 
-#[skyline::hook(offset = 0x355b570, inline)]
+#[skyline::hook(offset = 0x355b300, inline)]
 unsafe fn get_handle_by_hash(ctx: &mut skyline::hooks::InlineCtx) {
     let current_hash = Hash40::from(*ctx.registers[1].x.as_ref());
     *ctx.registers[1].x.as_mut() = get_new_effect_name(CURRENT_EXECUTING_OBJECT, current_hash)
@@ -716,14 +716,14 @@ unsafe fn get_handle_by_hash(ctx: &mut skyline::hooks::InlineCtx) {
         .as_u64();
 }
 
-#[skyline::hook(offset = 0x35630f0, inline)]
+#[skyline::hook(offset = 0x3562e80, inline)]
 unsafe fn make_effect(ctx: &mut skyline::hooks::InlineCtx) {
     let Some(new_effect) = get_new_effect_name(CURRENT_EXECUTING_OBJECT, Hash40::from(*ctx.registers[1].x.as_ref())) else { return };
 
     *ctx.registers[1].x.as_mut() = new_effect.as_u64();
 }
 
-#[skyline::hook(offset = 0x3567350, inline)]
+#[skyline::hook(offset = 0x35670e0, inline)]
 unsafe fn make_after_image(ctx: &skyline::hooks::InlineCtx) {
     let ptr = *ctx.registers[0].x.as_ref() as *mut Hash40;
     let first_hash = *ptr.add(4);
@@ -733,7 +733,7 @@ unsafe fn make_after_image(ctx: &skyline::hooks::InlineCtx) {
     *ptr.add(5) = get_new_effect_name(CURRENT_EXECUTING_OBJECT, second_hash).unwrap_or(second_hash);
 }
 
-#[skyline::hook(offset = 0x3563af0, inline)]
+#[skyline::hook(offset = 0x3563880, inline)]
 unsafe fn detach_effect(ctx: &mut skyline::hooks::InlineCtx) {
     let current_hash = Hash40::from(*ctx.registers[3].x.as_ref());
     *ctx.registers[3].x.as_mut() = get_new_effect_name(CURRENT_EXECUTING_OBJECT, current_hash)
@@ -741,7 +741,7 @@ unsafe fn detach_effect(ctx: &mut skyline::hooks::InlineCtx) {
         .as_u64();
 }
 
-#[skyline::hook(offset = 0x3563bf0, inline)]
+#[skyline::hook(offset = 0x3563980, inline)]
 unsafe fn kill_effect(ctx: &mut skyline::hooks::InlineCtx) {
     let current_hash = Hash40::from(*ctx.registers[5].x.as_ref());
     *ctx.registers[5].x.as_mut() = get_new_effect_name(CURRENT_EXECUTING_OBJECT, current_hash)
@@ -939,7 +939,7 @@ pub fn main() {
 
     unsafe {
         // nop all of the following instructions because we are replacing them with a hook of our own
-        skyline::patching::Patch::in_text(0x356030c).data([
+        skyline::patching::Patch::in_text(0x356009c).data([
             AARCh264_NOP,
             AARCh264_NOP,
             AARCh264_NOP,
@@ -947,7 +947,7 @@ pub fn main() {
             AARCh264_NOP,
             AARCh264_NOP,
         ]);
-        skyline::patching::Patch::in_text(0x355fe94).nop();
+        skyline::patching::Patch::in_text(0x355fc24).nop();
         skyline::patching::Patch::in_text(0x60bf78).data(0x52800009u32);
     }
 
