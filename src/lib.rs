@@ -22,7 +22,11 @@ use smash::{
         *,
         Fighter
     },
-    lib::lua_const::*
+    lib::{
+        lua_const::*, 
+        L2CValue, 
+        L2CAgent
+    }
 };
 
 use std::{
@@ -140,6 +144,8 @@ impl SlotCache {
         Self::create_cache_entry(&mut lock, fighter, slot);
         let map = lock.get(fighter).unwrap();
         let info = map.get(&slot).unwrap();
+        if info.has_trail { println!("{} slot {} has unique trails", fighter, slot as i32)} 
+        else {println!("{} slot {} uses base trails", fighter, slot as i32)};
         info.has_trail
     }
 }
@@ -569,19 +575,19 @@ unsafe fn unset_current_exe_obj(_: &skyline::hooks::InlineCtx) {
     CURRENT_EXECUTING_OBJECT = 0x50000000u32;
 }
 
+static mut DITTO_BUFFER: bool = false;
+
 unsafe fn get_new_effect_name(object_id: u32, current_name: Hash40) -> Option<Hash40> {
+    let effect_name = current_name.global_label().unwrap_or(format!("{:#x}", current_name.0));
     if object_id == 0x50000000u32 {
-        // println!(
-        //     "Object ID is invalid for effect {}",
-        //     current_name.global_label().unwrap_or(format!("{:#x}", current_name.0))
-        // );
+        // println!("Object ID is invalid for effect {effect_name}");
         return None;
     }
 
-    // uses label file to bypass running any additional logic if the effect is a common 'sys_' effect
-    let effect_name = current_name.global_label().unwrap_or(format!("{:#x}", current_name.0));
-    if effect_name.starts_with("sys_") {
-        // println!("bypassing sys effect ({})", effect_name);
+    // uses labels to bypass running any additional logic if the effect is a common 'sys_' effect
+    if effect_name.starts_with("sys_")
+    || effect_name.starts_with("pickel_rail") { // make an exception for minecart rails. these get called a LOT and will lag the game if we don't bypass them
+        // println!("bypassing effect ({})", effect_name);
         return None;
     }
 
@@ -626,6 +632,31 @@ unsafe fn get_new_effect_name(object_id: u32, current_name: Hash40) -> Option<Ha
         kind = *FIGHTER_KIND_POPO as usize;
     }
 
+    // process unique hit effects specifically for dittos, so that effects match the attacker rather than the defender
+    let handle_ditto_effs = 
+        (effect_name.starts_with("bayonetta_hit") && kind == *FIGHTER_KIND_BAYONETTA as usize)
+        || (effect_name.starts_with("jack_gun_hit") && kind == *FIGHTER_KIND_JACK as usize)
+        || (effect_name.starts_with("demon_hit") && kind == *FIGHTER_KIND_DEMON as usize)
+        || (effect_name.starts_with("trail_hit") && kind == *FIGHTER_KIND_TRAIL as usize);
+    if handle_ditto_effs && !DITTO_BUFFER {
+        println!("handling ditto!");
+        DITTO_BUFFER = true; // enable a buffer so this doesnt get caught in an infinite loop
+        let defender_entry_id = WorkModule::get_int(parent_object.module_accessor, *FIGHTER_INSTANCE_WORK_ID_INT_ENTRY_ID);
+        for i in 0..8 {
+            if i == defender_entry_id { continue };
+            let opponent_boma = sv_battle_object::module_accessor(Fighter::get_id_from_entry_id(i));
+            let opponent_kind = utility::get_kind(&mut *opponent_boma);
+            if opponent_kind == -1 { continue };
+            let opponent_slot = (WorkModule::get_int(opponent_boma, *FIGHTER_INSTANCE_WORK_ID_INT_COLOR) - 1);
+            if FIGHTER_EFFECT_NAMES.is_effect_for_fighter(opponent_kind as usize, current_name) {
+                let new_id = Fighter::get_id_from_entry_id(i);
+                return get_new_effect_name(new_id as u32, current_name); // this check will turn the buffer back off
+            }
+        }
+    } else {
+        DITTO_BUFFER = false;
+    }
+
     if !FIGHTER_EFFECT_NAMES.is_effect_for_fighter(kind, current_name) {
         // with common effects and weapons ruled out, we can assume if we are in this block that there is
         // most likely a fighter trying to call effects from a different fighter
@@ -639,7 +670,11 @@ unsafe fn get_new_effect_name(object_id: u32, current_name: Hash40) -> Option<Ha
         ];
 
         // make an exception for certain hit effects, since they actually get called by the opponent rather than the fighter themself
-        let is_uniq_hit_effect = effect_name.starts_with("trail_") || effect_name.starts_with("demon_");
+        let is_uniq_hit_effect = 
+            effect_name.starts_with("bayonetta_")
+            || effect_name.starts_with("jack_")
+            || effect_name.starts_with("trail_") 
+            || effect_name.starts_with("demon_");
 
         if (pocket_charas).contains(&kind)
         || is_uniq_hit_effect {
@@ -704,7 +739,7 @@ unsafe fn get_new_effect_name(object_id: u32, current_name: Hash40) -> Option<Ha
         *FIGHTER_INSTANCE_WORK_ID_INT_COLOR,
     ) as usize;
     let Some(new) = EFF_HASH_LOOKUP.get_one_slotted_effect(current_name, slot) else { return None };
-    // println!("Changed effect {} to {}", current_name.global_label().unwrap_or(format!("{:#x}", current_name.0)), new.global_label().unwrap_or(format!("{:#x}", new.0)));
+    // println!("Changed effect {} to {}", effect_name, new.global_label().unwrap_or(format!("{:#x}", new.0)));
     Some(new)
 }
 
@@ -747,6 +782,97 @@ unsafe fn kill_effect(ctx: &mut skyline::hooks::InlineCtx) {
     *ctx.registers[5].x.as_mut() = get_new_effect_name(CURRENT_EXECUTING_OBJECT, current_hash)
         .unwrap_or(current_hash)
         .as_u64();
+}
+
+// EffectModule::detach_kind
+#[skyline::hook(offset = 0x20178d0, inline)]
+unsafe fn detach_kind(ctx: &mut skyline::hooks::InlineCtx) {
+    let boma = *ctx.registers[0].x.as_ref() as *mut BattleObjectModuleAccessor;
+    let current_hash = Hash40::from(*ctx.registers[1].x.as_ref());
+    *ctx.registers[1].x.as_mut() = get_new_effect_name((&mut *boma).battle_object_id, current_hash)
+        .unwrap_or(current_hash)
+        .as_u64();
+}
+
+// EffectModule::end_kind
+#[skyline::hook(offset = 0x20178f0, inline)]
+unsafe fn end_kind(ctx: &mut skyline::hooks::InlineCtx) {
+    let boma = *ctx.registers[0].x.as_ref() as *mut BattleObjectModuleAccessor;
+    let current_hash = Hash40::from(*ctx.registers[1].x.as_ref());
+    *ctx.registers[1].x.as_mut() = get_new_effect_name((&mut *boma).battle_object_id, current_hash)
+        .unwrap_or(current_hash)
+        .as_u64();
+}
+
+// EffectModule::kill_kind
+#[skyline::hook(offset = 0x2017860, inline)]
+unsafe fn kill_kind(ctx: &mut skyline::hooks::InlineCtx) {
+    let boma = *ctx.registers[0].x.as_ref() as *mut BattleObjectModuleAccessor;
+    let current_hash = Hash40::from(*ctx.registers[1].x.as_ref());
+    *ctx.registers[1].x.as_mut() = get_new_effect_name((&mut *boma).battle_object_id, current_hash)
+        .unwrap_or(current_hash)
+        .as_u64();
+}
+
+// sv_animcmd::EFFECT_DETACH_KIND
+#[skyline::hook(offset = 0x22a5780, inline)]
+unsafe fn effect_detach_hook(ctx: &mut skyline::hooks::InlineCtx) {
+    let lua_state = *ctx.registers[0].x.as_ref();
+    let mut agent: L2CAgent = L2CAgent::new(lua_state.clone());
+    let mut params: [L2CValue ; 16] = [
+        L2CValue::new_void(), L2CValue::new_void(), L2CValue::new_void(), L2CValue::new_void(), 
+        L2CValue::new_void(), L2CValue::new_void(), L2CValue::new_void(), L2CValue::new_void(), 
+        L2CValue::new_void(), L2CValue::new_void(), L2CValue::new_void(), L2CValue::new_void(), 
+        L2CValue::new_void(), L2CValue::new_void(), L2CValue::new_void(), L2CValue::new_void()
+    ];
+    for i in 0..16 { params[i as usize] = agent.pop_lua_stack(i + 1) };
+
+    agent.clear_lua_stack();
+    for i in 0..16 {
+        if i == 0 { // effect hash index
+            let mut effect_name = params[i as usize].get_u64();
+            let mut hash = Hash40::from(effect_name);
+            let new = get_new_effect_name(CURRENT_EXECUTING_OBJECT, hash).unwrap_or(hash);
+            agent.push_lua_stack(&mut L2CValue::new_hash(new.as_u64()));
+        } else {
+            agent.push_lua_stack(&mut params[i as usize]);
+        }
+    }
+}
+
+// sv_animcmd::EFFECT_GLOBAL_BACK_GROUND
+#[skyline::hook(offset = 0x228f460, inline)]
+unsafe fn global_back_ground_hook(ctx: &mut skyline::hooks::InlineCtx) {
+    let lua_state = *ctx.registers[0].x.as_ref();
+    let mut agent: L2CAgent = L2CAgent::new(lua_state.clone());
+    let mut params: [L2CValue ; 16] = [
+        L2CValue::new_void(), L2CValue::new_void(), L2CValue::new_void(), L2CValue::new_void(), 
+        L2CValue::new_void(), L2CValue::new_void(), L2CValue::new_void(), L2CValue::new_void(), 
+        L2CValue::new_void(), L2CValue::new_void(), L2CValue::new_void(), L2CValue::new_void(), 
+        L2CValue::new_void(), L2CValue::new_void(), L2CValue::new_void(), L2CValue::new_void()
+    ];
+    for i in 0..16 { params[i as usize] = agent.pop_lua_stack(i + 1) };
+
+    agent.clear_lua_stack();
+    for i in 0..16 {
+        if i == 0 { // effect hash index
+            let mut effect_name = params[i as usize].get_u64();
+            let mut hash = Hash40::from(effect_name);
+            for i in 0..8 {
+                // since these backgrounds are called on a common level, we will manually check each entry id to find any fighter-specific background effects
+                let id = Fighter::get_id_from_entry_id(i);
+                if let Some(new) = get_new_effect_name(id as u32, hash) {
+                    hash = new;
+                    break;
+                } else {
+                    continue;
+                };
+            }
+            agent.push_lua_stack(&mut L2CValue::new_hash(hash.as_u64()));
+        } else {
+            agent.push_lua_stack(&mut params[i as usize]);
+        }
+    }
 }
 
 static MOVIE_CACHE: Lazy<HashCache> = Lazy::new(|| {
@@ -963,6 +1089,11 @@ pub fn main() {
         make_after_image,
         detach_effect,
         kill_effect,
+        detach_kind,
+        end_kind,
+        kill_kind,
+        effect_detach_hook,
+        global_back_ground_hook,
         get_handle_by_hash,
         // one_slot_movies,
         // main_menu_create,
