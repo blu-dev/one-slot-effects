@@ -616,6 +616,13 @@ unsafe fn get_new_effect_name(object_id: u32, current_name: Hash40) -> Option<Ha
                     current_name,
                 );
             }
+            else if LinkModule::is_link((*item).module_accessor, *ITEM_LINK_NO_CREATEOWNER) {
+                return get_new_effect_name(
+                    LinkModule::get_parent_id((*item).module_accessor, *ITEM_LINK_NO_CREATEOWNER, false)
+                        as u32,
+                    current_name,
+                );
+            }
             return None;
         }
         _ => {
