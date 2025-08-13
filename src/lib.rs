@@ -277,15 +277,15 @@ fn get_fighter_name(index: usize) -> &'static str {
 /// is the one that returns the path index for the effect folds
 #[skyline::hook(offset = 0x60bf3c, inline)]
 unsafe fn fighter_lookup_effect_folder(ctx: &skyline::hooks::InlineCtx) {
-    assert_eq!(*ctx.registers[3].w.as_ref(), 0x14); // ensure that we are looking up an effect
+    assert_eq!(ctx.registers[3].w(), 0x14); // ensure that we are looking up an effect
 
     // get the costume slot
-    let costume_slot = *(*ctx.registers[1].x.as_ref() as *const u8).add(100) as usize;
+    let costume_slot = *(ctx.registers[1].x() as *const u8).add(100) as usize;
 
     MOVIE_SLOT = costume_slot;
 
     // get the fighter kind as a usize because we are going to lookup the fighter string
-    let fighter_kind = *ctx.registers[2].w.as_ref() as usize;
+    let fighter_kind = ctx.registers[2].w() as usize;
 
     // get the fighter name from the fighter kind
     let fighter_name = get_fighter_name(fighter_kind);
@@ -331,23 +331,23 @@ unsafe fn check_extension_eff_inline_hook(ctx: &mut skyline::hooks::InlineCtx) {
     let eff_hash = Hash40::from("eff");
 
     // get the path list entry from x8
-    let path_list_entry: &PathListEntry = &*(*ctx.registers[8].x.as_ref() as *const PathListEntry);
+    let path_list_entry: &PathListEntry = &*(ctx.registers[8].x() as *const PathListEntry);
 
     // satisfy post conditions before doing fighter only block
-    *ctx.registers[8].x.as_mut() = if path_list_entry.ext.hash40() == eff_hash {
-        0
+    if path_list_entry.ext.hash40() == eff_hash {
+        ctx.registers[8].set_x(0);
     } else {
-        1
-    };
-    *ctx.registers[9].x.as_mut() = eff_hash.as_u64();
+        ctx.registers[8].set_x(1);
+    }
+    ctx.registers[9].set_x(eff_hash.as_u64());
 
     // Don't bother checking if the extension is not eff
-    if *ctx.registers[8].x.as_ref() != 0 {
+    if ctx.registers[8].x() != 0 {
         return;
     }
 
     // Get the hashmap key and if mask it for the fighter set
-    if *ctx.registers[26].w.as_ref() & 0xF00 != 0x300 {
+    if ctx.registers[26].w() & 0xF00 != 0x300 {
         return;
     }
 
@@ -363,16 +363,16 @@ unsafe fn check_extension_eff_inline_hook(ctx: &mut skyline::hooks::InlineCtx) {
     };
 
     // Based on the file name hash accept or reject the `PathListEntry`
-    *ctx.registers[8].x.as_mut() = if path_list_entry.file_name.hash40() == hash {
+    if path_list_entry.file_name.hash40() == hash {
         // if let Some(slot) =  EFF_FIGHTER_SLOT.as_ref() {
         //     println!("accepting PathListEntry for slot {}'s eff", *slot as i32);
         // } else { 
         //     println!("accepting PathListEntry for base eff file");
         // };
-        0
+        ctx.registers[8].set_x(0);
     } else {
-        1
-    };
+        ctx.registers[8].set_x(1);
+    }
 }
 
 /// This function is run immediately after the Fighter object's call to the EFF loading function.
@@ -396,8 +396,8 @@ unsafe fn get_trail_folder_hash(ctx: &mut skyline::hooks::InlineCtx) {
     // x8: The crc32 to search for (but inverted)
     // x10: The length of the hash
 
-    if *ctx.registers[26].w.as_ref() & 0xF00 != 0x300 {
-        *ctx.registers[10].w.as_mut() = *ctx.registers[9].w.as_ref();
+    if ctx.registers[26].w() & 0xF00 != 0x300 {
+        ctx.registers[10].set_w(ctx.registers[9].w());
         return;
     }
 
@@ -406,13 +406,13 @@ unsafe fn get_trail_folder_hash(ctx: &mut skyline::hooks::InlineCtx) {
             let hash = Hash40::from(
                 format!("effect/fighter/{}/trail_c{:02}", fighter_name, costume_slot).as_str(),
             );
-            *ctx.registers[10].w.as_mut() = hash.len() as u32;
-            *ctx.registers[8].w.as_mut() = !hash.crc32();
+            ctx.registers[10].set_w(hash.len() as u32);
+            ctx.registers[8].set_w(!hash.crc32());
         } else {
-            *ctx.registers[10].w.as_mut() = *ctx.registers[9].w.as_ref();
+            ctx.registers[10].set_w(ctx.registers[9].w());
         }
     } else {
-        *ctx.registers[10].w.as_mut() = *ctx.registers[9].w.as_ref();
+        ctx.registers[10].set_w(ctx.registers[9].w());
     }
 }
 
@@ -421,8 +421,8 @@ unsafe fn get_raw_nutexb_data(ctx: &mut skyline::hooks::InlineCtx) {
     let Some(slot) = EFF_FIGHTER_TRAIL_SLOT.as_ref() else { return };
     let slot = *slot;
 
-    let raw_data = *ctx.registers[1].x.as_ref() as *mut u8;
-    let size = *ctx.registers[2].x.as_ref() as usize;
+    let raw_data = ctx.registers[1].x() as *mut u8;
+    let size = ctx.registers[2].x() as usize;
 
     if raw_data.is_null() {
         panic!("Trail nutexb data is unloaded for slot c{:02} (fighter unknown), please make sure your config.json files are correct", slot);
@@ -464,7 +464,7 @@ unsafe fn get_raw_eff_data(ctx: &mut skyline::hooks::InlineCtx) {
     let kind = *kind;
     let slot = *slot;
 
-    let mut raw_eff_data = *(*ctx.registers[8].x.as_ref() as *const *const u8);
+    let mut raw_eff_data = *(ctx.registers[8].x() as *const *const u8);
     if raw_eff_data.is_null() {
         panic!("The effect data for {} slot c{:02} is unloaded, please make sure your config.json is correct!", fighter_name, slot);
     }
@@ -524,7 +524,7 @@ unsafe fn get_raw_eff_data(ctx: &mut skyline::hooks::InlineCtx) {
             new_memory.add(new_size),
             vfxb_size,
         );
-        *(*ctx.registers[8].x.as_ref() as *mut *mut u8) = new_memory;
+        *(ctx.registers[8].x() as *mut *mut u8) = new_memory;
         let old_memory = raw_eff_data as *mut u8;
         raw_eff_data = new_memory;
         skyline::libc::free(old_memory as _);
@@ -547,7 +547,7 @@ unsafe fn battle_object_from_id(id: u32) -> *mut u32;
 unsafe fn tmp(ctx: &mut skyline::hooks::InlineCtx) {
     let Some(slot) = EFF_FIGHTER_SLOT.as_ref() else { return };
     let slot = 1 + *slot as u32;
-    *ctx.registers[1].w.as_mut() += slot * 0x1000;
+    ctx.registers[1].set_w(ctx.registers[1].w() + slot * 0x1000);
 }
 
 static mut CURRENT_EXECUTING_OBJECT: u32 = 0x50000000u32;
@@ -567,7 +567,7 @@ static mut OFFSET: usize = 0usize;
 
 #[skyline::hook(offset = OFFSET, inline)]
 unsafe fn set_current_exe_obj(ctx: &skyline::hooks::InlineCtx) {
-    CURRENT_EXECUTING_OBJECT = *(*ctx.registers[0].x.as_ref() as *const u32).add(2);
+    CURRENT_EXECUTING_OBJECT = *(ctx.registers[0].x() as *const u32).add(2);
 }
 
 #[skyline::hook(offset = OFFSET, inline)]
@@ -752,22 +752,24 @@ unsafe fn get_new_effect_name(object_id: u32, current_name: Hash40) -> Option<Ha
 
 #[skyline::hook(offset = 0x355b300, inline)]
 unsafe fn get_handle_by_hash(ctx: &mut skyline::hooks::InlineCtx) {
-    let current_hash = Hash40::from(*ctx.registers[1].x.as_ref());
-    *ctx.registers[1].x.as_mut() = get_new_effect_name(CURRENT_EXECUTING_OBJECT, current_hash)
-        .unwrap_or(current_hash)
-        .as_u64();
+    let current_hash = Hash40::from(ctx.registers[1].x());
+    ctx.registers[1].set_x(
+        get_new_effect_name(CURRENT_EXECUTING_OBJECT, current_hash)
+            .unwrap_or(current_hash)
+            .as_u64()
+    );
 }
 
 #[skyline::hook(offset = 0x3562e80, inline)]
 unsafe fn make_effect(ctx: &mut skyline::hooks::InlineCtx) {
-    let Some(new_effect) = get_new_effect_name(CURRENT_EXECUTING_OBJECT, Hash40::from(*ctx.registers[1].x.as_ref())) else { return };
+    let Some(new_effect) = get_new_effect_name(CURRENT_EXECUTING_OBJECT, Hash40::from(ctx.registers[1].x())) else { return };
 
-    *ctx.registers[1].x.as_mut() = new_effect.as_u64();
+    ctx.registers[1].set_x(new_effect.as_u64());
 }
 
 #[skyline::hook(offset = 0x35670e0, inline)]
 unsafe fn make_after_image(ctx: &skyline::hooks::InlineCtx) {
-    let ptr = *ctx.registers[0].x.as_ref() as *mut Hash40;
+    let ptr = ctx.registers[0].x() as *mut Hash40;
     let first_hash = *ptr.add(4);
     let second_hash = *ptr.add(5);
 
@@ -777,54 +779,64 @@ unsafe fn make_after_image(ctx: &skyline::hooks::InlineCtx) {
 
 #[skyline::hook(offset = 0x3563880, inline)]
 unsafe fn detach_effect(ctx: &mut skyline::hooks::InlineCtx) {
-    let current_hash = Hash40::from(*ctx.registers[3].x.as_ref());
-    *ctx.registers[3].x.as_mut() = get_new_effect_name(CURRENT_EXECUTING_OBJECT, current_hash)
-        .unwrap_or(current_hash)
-        .as_u64();
+    let current_hash = Hash40::from(ctx.registers[3].x());
+    ctx.registers[3].set_x(
+        get_new_effect_name(CURRENT_EXECUTING_OBJECT, current_hash)
+            .unwrap_or(current_hash)
+            .as_u64()
+    );
 }
 
 #[skyline::hook(offset = 0x3563980, inline)]
 unsafe fn kill_effect(ctx: &mut skyline::hooks::InlineCtx) {
-    let current_hash = Hash40::from(*ctx.registers[5].x.as_ref());
-    *ctx.registers[5].x.as_mut() = get_new_effect_name(CURRENT_EXECUTING_OBJECT, current_hash)
-        .unwrap_or(current_hash)
-        .as_u64();
+    let current_hash = Hash40::from(ctx.registers[5].x());
+    ctx.registers[5].set_x(
+        get_new_effect_name(CURRENT_EXECUTING_OBJECT, current_hash)
+            .unwrap_or(current_hash)
+            .as_u64()
+    );
 }
 
 // EffectModule::detach_kind
 #[skyline::hook(offset = 0x20178d0, inline)]
 unsafe fn detach_kind(ctx: &mut skyline::hooks::InlineCtx) {
-    let boma = *ctx.registers[0].x.as_ref() as *mut BattleObjectModuleAccessor;
-    let current_hash = Hash40::from(*ctx.registers[1].x.as_ref());
-    *ctx.registers[1].x.as_mut() = get_new_effect_name((&mut *boma).battle_object_id, current_hash)
-        .unwrap_or(current_hash)
-        .as_u64();
+    let boma = ctx.registers[0].x() as *mut BattleObjectModuleAccessor;
+    let current_hash = Hash40::from(ctx.registers[1].x());
+    ctx.registers[1].set_x(
+        get_new_effect_name((&mut *boma).battle_object_id, current_hash)
+            .unwrap_or(current_hash)
+            .as_u64()
+    );
 }
 
 // EffectModule::end_kind
 #[skyline::hook(offset = 0x20178f0, inline)]
 unsafe fn end_kind(ctx: &mut skyline::hooks::InlineCtx) {
-    let boma = *ctx.registers[0].x.as_ref() as *mut BattleObjectModuleAccessor;
-    let current_hash = Hash40::from(*ctx.registers[1].x.as_ref());
-    *ctx.registers[1].x.as_mut() = get_new_effect_name((&mut *boma).battle_object_id, current_hash)
-        .unwrap_or(current_hash)
-        .as_u64();
+    let boma = ctx.registers[0].x() as *mut BattleObjectModuleAccessor;
+    let current_hash = Hash40::from(ctx.registers[1].x());
+    ctx.registers[1].set_x(
+        get_new_effect_name((&mut *boma).battle_object_id, current_hash)
+            .unwrap_or(current_hash)
+            .as_u64()
+    );
 }
 
 // EffectModule::kill_kind
 #[skyline::hook(offset = 0x2017860, inline)]
 unsafe fn kill_kind(ctx: &mut skyline::hooks::InlineCtx) {
-    let boma = *ctx.registers[0].x.as_ref() as *mut BattleObjectModuleAccessor;
-    let current_hash = Hash40::from(*ctx.registers[1].x.as_ref());
-    *ctx.registers[1].x.as_mut() = get_new_effect_name((&mut *boma).battle_object_id, current_hash)
-        .unwrap_or(current_hash)
-        .as_u64();
+    let boma = ctx.registers[0].x() as *mut BattleObjectModuleAccessor;
+    let current_hash = Hash40::from(ctx.registers[1].x());
+    ctx.registers[1].set_x(
+        get_new_effect_name((&mut *boma).battle_object_id, current_hash)
+            .unwrap_or(current_hash)
+            .as_u64()
+    );
 }
 
 // sv_animcmd::EFFECT_DETACH_KIND
 #[skyline::hook(offset = 0x22a5780, inline)]
 unsafe fn effect_detach_hook(ctx: &mut skyline::hooks::InlineCtx) {
-    let lua_state = *ctx.registers[0].x.as_ref();
+    let lua_state = ctx.registers[0].x();
     let mut agent: L2CAgent = L2CAgent::new(lua_state.clone());
     let mut params: [L2CValue ; 16] = [
         L2CValue::new_void(), L2CValue::new_void(), L2CValue::new_void(), L2CValue::new_void(), 
@@ -850,7 +862,7 @@ unsafe fn effect_detach_hook(ctx: &mut skyline::hooks::InlineCtx) {
 // sv_animcmd::EFFECT_GLOBAL_BACK_GROUND
 #[skyline::hook(offset = 0x228f460, inline)]
 unsafe fn global_back_ground_hook(ctx: &mut skyline::hooks::InlineCtx) {
-    let lua_state = *ctx.registers[0].x.as_ref();
+    let lua_state = ctx.registers[0].x();
     let mut agent: L2CAgent = L2CAgent::new(lua_state.clone());
     let mut params: [L2CValue ; 16] = [
         L2CValue::new_void(), L2CValue::new_void(), L2CValue::new_void(), L2CValue::new_void(), 
@@ -998,13 +1010,13 @@ static MOVIE_OFFSETS: &[usize] = &[0xf02bb8, 0xb2fadc, 0xb2fba0, 0x9da1b4, 0x850
 
 #[skyline::hook(offset = OFFSET, inline)]
 unsafe fn one_slot_movies2(ctx: &mut skyline::hooks::InlineCtx) {
-    // let parent_object = *ctx.registers[19].x.as_ref() as *mut smash::app::BattleObject;
+    // let parent_object = ctx.registers[19].x() as *mut smash::app::BattleObject;
     // let slot = WorkModule::get_int((*parent_object).module_accessor, *FIGHTER_INSTANCE_WORK_ID_INT_COLOR) as usize;
 
     if let Some(hash) =
-        MOVIE_CACHE.get_one_slotted_effect(Hash40::from(*ctx.registers[1].x.as_ref()), MOVIE_SLOT)
+        MOVIE_CACHE.get_one_slotted_effect(Hash40::from(ctx.registers[1].x()), MOVIE_SLOT)
     {
-        *ctx.registers[1].x.as_mut() = hash.0;
+        ctx.registers[1].set_x(hash.0);
     }
 }
 
@@ -1014,7 +1026,7 @@ unsafe fn one_slot_movies(ctx: &mut skyline::hooks::InlineCtx) {
     if object_id == 0x50000000u32 {
         println!(
             "Object ID is invalid for effect {:#x}",
-            *ctx.registers[1].x.as_ref()
+            ctx.registers[1].x()
         );
         return;
     }
@@ -1031,9 +1043,9 @@ unsafe fn one_slot_movies(ctx: &mut skyline::hooks::InlineCtx) {
     ) as usize;
 
     if let Some(hash) =
-        MOVIE_CACHE.get_one_slotted_effect(Hash40::from(*ctx.registers[1].x.as_ref()), slot)
+        MOVIE_CACHE.get_one_slotted_effect(Hash40::from(ctx.registers[1].x()), slot)
     {
-        *ctx.registers[1].x.as_mut() = hash.0;
+        ctx.registers[1].set_x(hash.0);
     }
 }
 
@@ -1044,7 +1056,7 @@ unsafe fn main_menu_create(_: &skyline::hooks::InlineCtx) {
 
 #[skyline::hook(offset = 0x60bf78, inline)]
 unsafe fn fix_object_ptr(ctx: &mut skyline::hooks::InlineCtx) {
-    *ctx.registers[8].x.as_mut() += 0xC;
+    ctx.registers[8].set_x(ctx.registers[8].x() + 0xC);
 }
 
 #[skyline::main(name = "one-slot-eff")]
